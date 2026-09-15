@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MVN, Mahalanobis, Marginals & Conditionals</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#171a21;
+    --ink:#e8e6df;
+    --dim:#8b8f9a;
+    --accent:#5eb8a6;
+    --accent2:#e0a458;
+    --line:#2a2e38;
+    --danger:#d9756a;
+    --blue:#6ea8d9;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family: Georgia, 'Iowan Old Style', serif;
+    display:flex;
+    flex-wrap:wrap;
+    gap:24px;
+    padding:28px;
+    justify-content:center;
+  }
+  h1{
+    font-size:22px;
+    font-weight:normal;
+    margin:0 0 4px 0;
+  }
+  .sub{
+    color:var(--dim);
+    font-size:14px;
+    margin:0 0 18px 0;
+    max-width:560px;
+    line-height:1.5;
+    font-family:-apple-system, sans-serif;
+  }
+  .layout{
+    display:flex;
+    flex-wrap:wrap;
+    gap:24px;
+    align-items:flex-start;
+  }
+  .stage{
+    background:var(--panel);
+    border-radius:6px;
+    padding:18px;
+    border:1px solid var(--line);
+  }
+  .maingrid{
+    display:grid;
+    grid-template-columns: 60px 520px;
+    grid-template-rows: 520px 110px;
+    gap:6px;
+  }
+  #marg_y{ grid-column:1; grid-row:1; }
+  #main{ grid-column:2; grid-row:1; }
+  #marg_x{ grid-column:2; grid-row:2; }
+  canvas{ display:block; }
+  #main{
+    cursor:crosshair;
+    background: radial-gradient(circle at 50% 50%, #12151b 0%, #0d0f13 100%);
+    border-radius:4px;
+  }
+  .hint{
+    color:var(--dim);
+    font-size:12px;
+    margin-top:8px;
+    font-family: -apple-system, sans-serif;
+  }
+  .controls{
+    width:360px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:16px 18px;
+  }
+  .card h2{
+    font-size:14px;
+    font-weight:normal;
+    color:var(--accent);
+    margin:0 0 12px 0;
+    font-family: -apple-system, sans-serif;
+  }
+  .row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+    font-family: -apple-system, sans-serif;
+    font-size:13px;
+  }
+  .row label{
+    width:110px;
+    color:var(--dim);
+    flex-shrink:0;
+  }
+  .row input[type=range]{
+    flex:1;
+    accent-color: var(--accent);
+  }
+  .row.cond input[type=range]{ accent-color: var(--blue); }
+  .row .val{
+    width:44px;
+    text-align:right;
+    color:var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .toggle{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family:-apple-system, sans-serif;
+    font-size:13px;
+    color:var(--dim);
+  }
+  .eqn{
+    font-family: 'Cambria Math', Georgia, serif;
+    font-size:14.5px;
+    line-height:1.9;
+  }
+  .eqn .step{
+    display:block;
+    padding:4px 0;
+    border-bottom:1px dotted var(--line);
+  }
+  .eqn .step:last-child{border-bottom:none;}
+  .eqn .lab{
+    color:var(--dim);
+    font-size:11px;
+    font-family:-apple-system, sans-serif;
+    display:block;
+    margin-bottom:2px;
+  }
+  .num{color:var(--accent2);}
+  .numB{color:var(--blue);}
+  .result{
+    font-size:19px;
+    color:var(--accent);
+    margin-top:6px;
+  }
+  .legend{
+    font-family:-apple-system, sans-serif;
+    font-size:12px;
+    color:var(--dim);
+    margin-top:10px;
+    line-height:1.7;
+  }
+  .dot{
+    display:inline-block;
+    width:9px;height:9px;
+    border-radius:50%;
+    margin-right:6px;
+  }
+  .dash{
+    display:inline-block;
+    width:14px;
+    border-top:1.5px dashed var(--dim);
+    margin-right:6px;
+    vertical-align:middle;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <h1>MVN, Mahalanobis distance, marginals & conditionals</h1>
+  <p class="sub">Reshape Σ, drop a point to see its Mahalanobis distance, and drag the blue "condition on x₂" slider to slice the ellipse — watch the conditional distribution shift and tighten in the bottom panel, and compare it to the unconditional marginal (dashed).</p>
+  <div class="stage">
+    <div class="maingrid">
+      <canvas id="marg_y" width="60" height="520"></canvas>
+      <canvas id="main" width="520" height="520"></canvas>
+      <div></div>
+      <canvas id="marg_x" width="520" height="110"></canvas>
+    </div>
+    <div class="hint">Click the main plot to place a point. Drag the horizontal blue line (or use the slider) to condition on x₂.</div>
+    <div class="legend">
+      <div><span class="dot" style="background:var(--accent2)"></span>Density contours (1, 2, 3 Mahalanobis units)</div>
+      <div><span class="dot" style="background:var(--danger)"></span>Your point &nbsp;·&nbsp; <span class="dash"></span> dashed = Euclidean distance</div>
+      <div><span class="dot" style="background:var(--blue)"></span>Conditioning line x₂ = a, and the resulting conditional slice</div>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="card">
+    <h2>Shape the covariance matrix Σ</h2>
+    <div class="row">
+      <label>σₓ (var. in x)</label>
+      <input type="range" id="sx" min="0.4" max="3" step="0.05" value="1.4">
+      <span class="val" id="sxv">1.40</span>
+    </div>
+    <div class="row">
+      <label>σᵧ (var. in y)</label>
+      <input type="range" id="sy" min="0.4" max="3" step="0.05" value="0.8">
+      <span class="val" id="syv">0.80</span>
+    </div>
+    <div class="row">
+      <label>ρ (correlation)</label>
+      <input type="range" id="rho" min="-0.95" max="0.95" step="0.01" value="0.6">
+      <span class="val" id="rhov">0.60</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Condition on x₂ = a</h2>
+    <div class="row cond">
+      <label>a (value of x₂)</label>
+      <input type="range" id="cond" min="-4" max="4" step="0.05" value="1.2">
+      <span class="val" id="condv">1.20</span>
+    </div>
+    <div class="eqn" id="condcalc"></div>
+  </div>
+
+  <div class="card">
+    <h2>Mahalanobis distance of your point</h2>
+    <div class="eqn" id="calc">
+      <span class="step">Click a point on the main plot to begin.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const mainCv = document.getElementById('main');
+const mctx = mainCv.getContext('2d');
+const margXCv = document.getElementById('marg_x');
+const mxctx = margXCv.getContext('2d');
+const margYCv = document.getElementById('marg_y');
+const myctx = margYCv.getContext('2d');
+
+const W = mainCv.width, H = mainCv.height;
+const scale = 65;
+const cx = W/2, cy = H/2;
+const RANGE = 4; // data units shown to each side
+
+const sxEl = document.getElementById('sx');
+const syEl = document.getElementById('sy');
+const rhoEl = document.getElementById('rho');
+const condEl = document.getElementById('cond');
+const sxv = document.getElementById('sxv');
+const syv = document.getElementById('syv');
+const rhov = document.getElementById('rhov');
+const condv = document.getElementById('condv');
+const calc = document.getElementById('calc');
+const condcalc = document.getElementById('condcalc');
+
+let point = null;
+let draggingCond = false;
+
+function toScreen(x,y){ return [cx + x*scale, cy - y*scale]; }
+function toData(px,py){ return [(px-cx)/scale, -(py-cy)/scale]; }
+
+function getSigma(){
+  const sx = parseFloat(sxEl.value);
+  const sy = parseFloat(syEl.value);
+  const rho = parseFloat(rhoEl.value);
+  const cov = rho*sx*sy;
+  return {sx, sy, rho, cov, Sigma:[[sx*sx, cov],[cov, sy*sy]]};
+}
+
+function invert2x2(S){
+  const [[a,b],[c,d]] = S;
+  const det = a*d - b*c;
+  return {inv:[[d/det, -b/det],[-c/det, a/det]], det};
+}
+
+function eig2x2(S){
+  const a = S[0][0], b = S[0][1], d = S[1][1];
+  const tr = a+d, diff = a-d;
+  const disc = Math.sqrt(diff*diff + 4*b*b);
+  const l1 = (tr+disc)/2, l2 = (tr-disc)/2;
+  let angle;
+  if (b === 0) { angle = a >= d ? 0 : Math.PI/2; }
+  else { angle = Math.atan2(l1 - a, b); }
+  return {l1, l2, angle};
+}
+
+function normPdf(x, mu, sigma){
+  return Math.exp(-0.5*((x-mu)/sigma)**2) / (sigma*Math.sqrt(2*Math.PI));
+}
+
+function fmt(n){ return (Math.round(n*100)/100).toFixed(2); }
+
+function drawGrid(context, w, h, offx, offy){
+  context.strokeStyle = '#20242e';
+  context.lineWidth = 1;
+  for(let g=-6; g<=6; g++){
+    let [x0] = toScreen(g,0);
+    context.beginPath(); context.moveTo(x0-offx,0); context.lineTo(x0-offx,h); context.stroke();
+    let [,y0] = toScreen(0,g);
+    context.beginPath(); context.moveTo(0,y0-offy); context.lineTo(w,y0-offy); context.stroke();
+  }
+}
+
+function draw(){
+  const {sx, sy, rho, Sigma} = getSigma();
+  const {inv} = invert2x2(Sigma);
+  const {l1, l2, angle} = eig2x2(Sigma);
+  const a = parseFloat(condEl.value);
+
+  // ---------- MAIN PLOT ----------
+  mctx.clearRect(0,0,W,H);
+  drawGrid(mctx, W, H, 0, 0);
+  mctx.strokeStyle = '#3a3f4c';
+  mctx.lineWidth = 1.5;
+  mctx.beginPath(); mctx.moveTo(0,cy); mctx.lineTo(W,cy); mctx.stroke();
+  mctx.beginPath(); mctx.moveTo(cx,0); mctx.lineTo(cx,H); mctx.stroke();
+
+  // density contours
+  [1,2,3].forEach((r,i) => {
+    mctx.save();
+    mctx.translate(cx, cy);
+    mctx.rotate(-angle);
+    mctx.strokeStyle = `rgba(224,164,88,${0.8 - i*0.22})`;
+    mctx.lineWidth = 1.6;
+    mctx.beginPath();
+    mctx.ellipse(0,0, Math.sqrt(l1)*scale*r, Math.sqrt(l2)*scale*r, 0, 0, Math.PI*2);
+    mctx.stroke();
+    mctx.restore();
+  });
+
+  // mean
+  mctx.fillStyle = '#e8e6df';
+  mctx.beginPath(); mctx.arc(cx,cy,4,0,Math.PI*2); mctx.fill();
+  mctx.font = "12px -apple-system, sans-serif";
+  mctx.fillStyle = '#8b8f9a';
+  mctx.fillText('μ', cx+8, cy-8);
+
+  // conditioning line at x2 = a
+  const [,ay] = toScreen(0,a);
+  mctx.strokeStyle = 'rgba(110,168,217,0.9)';
+  mctx.lineWidth = 2;
+  mctx.setLineDash([]);
+  mctx.beginPath(); mctx.moveTo(0, ay); mctx.lineTo(W, ay); mctx.stroke();
+  mctx.fillStyle = '#6ea8d9';
+  mctx.font = "12px -apple-system, sans-serif";
+  mctx.fillText('x₂ = a', W-54, ay-8);
+
+  // conditional mean/var of x1 given x2=a
+  const condMean = (Sigma[0][1]/Sigma[1][1]) * a; // mu1=mu2=0
+  const condVar = Sigma[0][0] - (Sigma[0][1]*Sigma[1][0])/Sigma[1][1];
+  const condSd = Math.sqrt(Math.max(condVar,0));
+
+  // draw conditional 1D gaussian bump along the slice line
+  mctx.beginPath();
+  const bumpH = 46;
+  for(let px=0; px<=W; px++){
+    const [xd] = toData(px, ay);
+    const dens = normPdf(xd, condMean, condSd);
+    const yOff = dens * bumpH * condSd * Math.sqrt(2*Math.PI); // normalize peak-ish
+    const py = ay - yOff*  (bumpH/ normPdf(condMean,condMean,condSd) / (bumpH*condSd*Math.sqrt(2*Math.PI)) ) ;
+  }
+  // simpler: plot scaled density directly
+  mctx.beginPath();
+  const peak = normPdf(condMean, condMean, condSd);
+  for(let px=0; px<=W; px++){
+    const [xd] = toData(px, ay);
+    const dens = normPdf(xd, condMean, condSd);
+    const py = ay - (dens/peak) * 60;
+    if(px===0) mctx.moveTo(px,py); else mctx.lineTo(px,py);
+  }
+  mctx.strokeStyle = '#6ea8d9';
+  mctx.lineWidth = 2;
+  mctx.stroke();
+  mctx.lineTo(W, ay); mctx.lineTo(0, ay); mctx.closePath();
+  mctx.fillStyle = 'rgba(110,168,217,0.15)';
+  mctx.fill();
+
+  // marker at conditional mean on the line
+  const [cmx] = toScreen(condMean, 0);
+  mctx.fillStyle = '#6ea8d9';
+  mctx.beginPath(); mctx.arc(cmx, ay, 4, 0, Math.PI*2); mctx.fill();
+
+  // user point
+  if(point){
+    const [px,py] = toScreen(point.x, point.y);
+    const dx = point.x, dy = point.y;
+    const m2 = dx*dx*inv[0][0] + 2*dx*dy*inv[0][1] + dy*dy*inv[1][1];
+    const mdist = Math.sqrt(Math.max(m2,0));
+    const edist = Math.sqrt(dx*dx+dy*dy);
+
+    mctx.save();
+    mctx.setLineDash([4,4]);
+    mctx.strokeStyle = 'rgba(217,117,106,0.55)';
+    mctx.lineWidth = 1.4;
+    mctx.beginPath(); mctx.arc(cx,cy, edist*scale, 0, Math.PI*2); mctx.stroke();
+    mctx.restore();
+
+    mctx.save();
+    mctx.translate(cx,cy);
+    mctx.rotate(-angle);
+    mctx.strokeStyle = 'rgba(94,184,166,0.9)';
+    mctx.lineWidth = 2;
+    mctx.beginPath();
+    mctx.ellipse(0,0, Math.sqrt(l1)*scale*mdist, Math.sqrt(l2)*scale*mdist, 0,0,Math.PI*2);
+    mctx.stroke();
+    mctx.restore();
+
+    mctx.strokeStyle = '#d9756a';
+    mctx.lineWidth = 1.6;
+    mctx.beginPath(); mctx.moveTo(cx,cy); mctx.lineTo(px,py); mctx.stroke();
+    mctx.fillStyle = '#d9756a';
+    mctx.beginPath(); mctx.arc(px,py,5,0,Math.PI*2); mctx.fill();
+
+    calc.innerHTML = `
+      <span class="step"><span class="lab">x − μ</span>[ <span class="num">${fmt(dx)}</span>, <span class="num">${fmt(dy)}</span> ]</span>
+      <span class="step"><span class="lab">(x−μ)ᵀ Σ⁻¹ (x−μ)</span><span class="num">${fmt(m2)}</span></span>
+      <span class="step"><span class="lab">Euclidean distance</span><span class="num">${fmt(edist)}</span></span>
+      <div class="result">Mahalanobis = <b>${fmt(mdist)}</b></div>
+    `;
+  }
+
+  // ---------- MARGINAL X (bottom) ----------
+  const mw = margXCv.width, mh = margXCv.height;
+  mxctx.clearRect(0,0,mw,mh);
+  mxctx.strokeStyle = '#20242e';
+  for(let g=-6; g<=6; g++){
+    let [x0] = toScreen(g,0);
+    mxctx.beginPath(); mxctx.moveTo(x0,0); mxctx.lineTo(x0,mh); mxctx.stroke();
+  }
+  // unconditional marginal (dashed, dim)
+  const peakX = normPdf(0,0,sx);
+  mxctx.beginPath();
+  for(let px=0; px<=mw; px++){
+    const [xd] = toData(px,0);
+    const dens = normPdf(xd, 0, sx);
+    const py = mh - 6 - (dens/peakX)*(mh-16);
+    if(px===0) mxctx.moveTo(px,py); else mxctx.lineTo(px,py);
+  }
+  mxctx.setLineDash([4,4]);
+  mxctx.strokeStyle = 'rgba(139,143,154,0.8)';
+  mxctx.lineWidth = 1.4;
+  mxctx.stroke();
+  mxctx.setLineDash([]);
+
+  // conditional marginal for x1 | x2=a (solid blue)
+  mxctx.beginPath();
+  const peakXc = normPdf(condMean, condMean, condSd);
+  for(let px=0; px<=mw; px++){
+    const [xd] = toData(px,0);
+    const dens = normPdf(xd, condMean, condSd);
+    const py = mh - 6 - (dens/peakXc)*(mh-16);
+    if(px===0) mxctx.moveTo(px,py); else mxctx.lineTo(px,py);
+  }
+  mxctx.strokeStyle = '#6ea8d9';
+  mxctx.lineWidth = 2;
+  mxctx.stroke();
+  mxctx.lineTo(mw, mh-6); mxctx.lineTo(0, mh-6); mxctx.closePath();
+  mxctx.fillStyle = 'rgba(110,168,217,0.15)';
+  mxctx.fill();
+  mxctx.fillStyle = '#8b8f9a';
+  mxctx.font = "11px -apple-system, sans-serif";
+  mxctx.fillText('marginal p(x₁) [dashed]  vs  conditional p(x₁ | x₂=a) [solid]', 8, 14);
+
+  // ---------- MARGINAL Y (left) ----------
+  const yw = margYCv.width, yh = margYCv.height;
+  myctx.clearRect(0,0,yw,yh);
+  const peakY = normPdf(0,0,sy);
+  myctx.beginPath();
+  for(let py=0; py<=yh; py++){
+    const [,yd] = toData(0,py);
+    const dens = normPdf(yd, 0, sy);
+    const px = yw - 6 - (dens/peakY)*(yw-14);
+    if(py===0) myctx.moveTo(px,py); else myctx.lineTo(px,py);
+  }
+  myctx.strokeStyle = 'rgba(139,143,154,0.8)';
+  myctx.lineWidth = 1.4;
+  myctx.stroke();
+
+  condcalc.innerHTML = `
+    <span class="step"><span class="lab">Conditional mean, μ₁ + Σ₁₂Σ₂₂⁻¹(a−μ₂)</span><span class="numB">${fmt(condMean)}</span></span>
+    <span class="step"><span class="lab">Conditional variance, Σ₁₁ − Σ₁₂Σ₂₂⁻¹Σ₂₁</span><span class="numB">${fmt(condVar)}</span> &nbsp;(unconditional: ${fmt(Sigma[0][0])})</span>
+    <div class="result" style="color:var(--blue)">x₁ | x₂=a ~ N(${fmt(condMean)}, ${fmt(condVar)})</div>
+  `;
+}
+
+mainCv.addEventListener('mousedown', (e) => {
+  const rect = mainCv.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (W/rect.width);
+  const py = (e.clientY - rect.top) * (H/rect.height);
+  const {Sigma} = getSigma();
+  const a = parseFloat(condEl.value);
+  const [,ay] = toScreen(0,a);
+  if(Math.abs(py-ay) < 10){
+    draggingCond = true;
+  } else {
+    const [x,y] = toData(px,py);
+    point = {x,y};
+    draw();
+  }
+});
+window.addEventListener('mousemove', (e) => {
+  if(!draggingCond) return;
+  const rect = mainCv.getBoundingClientRect();
+  const py = (e.clientY - rect.top) * (H/rect.height);
+  const [,yd] = toData(0, Math.max(0,Math.min(H,py)));
+  const clamped = Math.max(-4, Math.min(4, yd));
+  condEl.value = clamped.toFixed(2);
+  condv.textContent = clamped.toFixed(2);
+  draw();
+});
+window.addEventListener('mouseup', () => { draggingCond = false; });
+
+[sxEl, syEl, rhoEl, condEl].forEach(el => el.addEventListener('input', () => {
+  sxv.textContent = parseFloat(sxEl.value).toFixed(2);
+  syv.textContent = parseFloat(syEl.value).toFixed(2);
+  rhov.textContent = parseFloat(rhoEl.value).toFixed(2);
+  condv.textContent = parseFloat(condEl.value).toFixed(2);
+  draw();
+}));
+
+sxv.textContent = parseFloat(sxEl.value).toFixed(2);
+syv.textContent = parseFloat(syEl.value).toFixed(2);
+rhov.textContent = parseFloat(rhoEl.value).toFixed(2);
+condv.textContent = parseFloat(condEl.value).toFixed(2);
+
+draw();
+</script>
+</body>
+</html>
