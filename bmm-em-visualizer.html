@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bernoulli Mixture Model — EM Instrument</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy-deep: #0e2233;
+    --navy-panel: #15304a;
+    --navy-panel-2: #1b3a59;
+    --line: rgba(234,242,248,0.14);
+    --line-strong: rgba(234,242,248,0.28);
+    --ink: #eaf2f8;
+    --ink-dim: #a9c0d2;
+    --amber: #e8a33d;
+    --amber-dim: rgba(232,163,61,0.35);
+    --cyan: #6fb7c9;
+    --paper-off: #24425f;
+    --paper-on: var(--amber);
+    --danger: #d97b6c;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0;
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0/34px 34px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/34px 34px,
+      var(--navy-deep);
+    color:var(--ink);
+    font-family:'IBM Plex Mono', monospace;
+    min-height:100vh;
+  }
+  h1,h2,h3{ font-family:'Source Serif 4', serif; font-weight:600; margin:0; }
+  .wrap{ max-width:1240px; margin:0 auto; padding:28px 20px 60px; }
+
+  header{ margin-bottom:22px; border-bottom:1px solid var(--line-strong); padding-bottom:18px; }
+  header h1{ font-size:clamp(1.5rem, 3vw, 2.1rem); line-height:1.15; color:var(--ink); }
+  header h1 em{ font-style:italic; color:var(--amber); }
+  header p{ margin:10px 0 0; color:var(--ink-dim); font-size:0.92rem; line-height:1.55; max-width:70ch; }
+
+  .board{
+    display:grid;
+    grid-template-columns: 230px 1fr 300px;
+    gap:16px;
+    align-items:start;
+  }
+  @media (max-width: 980px){
+    .board{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--navy-panel);
+    border:1px solid var(--line-strong);
+    border-radius:3px;
+    padding:16px;
+  }
+  .panel + .panel{ margin-top:16px; }
+  .panel-title{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.7rem;
+    letter-spacing:0.06em;
+    color:var(--ink-dim);
+    margin-bottom:12px;
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .panel-title .val{ color:var(--amber); font-weight:600; }
+
+  /* controls */
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:0.78rem; color:var(--ink-dim); margin-bottom:6px; }
+  .field .row{ display:flex; align-items:center; gap:8px; }
+  input[type=range]{
+    -webkit-appearance:none; width:100%; height:3px; background:var(--line-strong);
+    border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--amber); cursor:pointer; border:2px solid var(--navy-deep);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--amber); cursor:pointer; border:2px solid var(--navy-deep);
+  }
+  .kval{ font-family:'IBM Plex Mono'; color:var(--amber); font-weight:600; min-width:26px; text-align:right; }
+
+  button{
+    font-family:'IBM Plex Mono', monospace; font-size:0.78rem; letter-spacing:0.02em;
+    background:transparent; color:var(--ink); border:1px solid var(--line-strong);
+    border-radius:2px; padding:9px 12px; cursor:pointer; transition: all .15s ease;
+    width:100%; margin-bottom:8px;
+  }
+  button:hover{ border-color:var(--amber); color:var(--amber); }
+  button.primary{ background:var(--amber); color:#1a1104; border-color:var(--amber); font-weight:600; }
+  button.primary:hover{ background:#f0b25a; color:#1a1104; }
+  button:disabled{ opacity:0.35; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:8px; }
+  .btn-row button{ margin-bottom:0; }
+
+  .stat-line{ display:flex; justify-content:space-between; font-size:0.78rem; padding:5px 0; border-bottom:1px dashed var(--line); color:var(--ink-dim); }
+  .stat-line:last-child{ border-bottom:none; }
+  .stat-line .v{ color:var(--ink); font-weight:600; }
+
+  /* prototype grid */
+  .proto-grid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:10px;
+  }
+  .proto-cell{ text-align:center; }
+  .proto-cell canvas{ image-rendering:pixelated; border:1px solid var(--line-strong); width:100%; aspect-ratio:1/1; border-radius:2px; }
+  .proto-cell .pi{ font-size:0.62rem; color:var(--ink-dim); margin-top:4px; }
+  .proto-cell.dead canvas{ opacity:0.25; }
+
+  /* data thumbnails */
+  .sample-grid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(34px,1fr)); gap:6px;
+    max-height:210px; overflow-y:auto; padding-right:2px;
+  }
+  .sample-grid canvas{
+    image-rendering:pixelated; width:100%; aspect-ratio:1/1; border-radius:2px;
+    border:1px solid transparent; cursor:pointer;
+  }
+  .sample-grid canvas:hover{ border-color:var(--amber-dim); }
+  .sample-grid canvas.selected{ border-color:var(--amber); }
+
+  /* responsibility bars */
+  .resp-header{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+  .resp-header canvas{ image-rendering:pixelated; width:52px; height:52px; border:1px solid var(--line-strong); border-radius:2px; }
+  .resp-header .txt{ font-size:0.75rem; color:var(--ink-dim); line-height:1.5; }
+  .bars{ display:flex; flex-direction:column; gap:5px; max-height:230px; overflow-y:auto; }
+  .bar-row{ display:flex; align-items:center; gap:8px; font-size:0.68rem; color:var(--ink-dim); }
+  .bar-row .lbl{ width:20px; flex-shrink:0; }
+  .bar-track{ flex:1; height:9px; background:var(--paper-off); border-radius:1px; overflow:hidden; }
+  .bar-fill{ height:100%; background:var(--amber); }
+  .bar-row .pct{ width:38px; text-align:right; flex-shrink:0; }
+
+  /* likelihood chart */
+  .chart-wrap{ position:relative; }
+  #llCanvas{ width:100%; height:150px; display:block; }
+  .chart-caption{ font-size:0.72rem; color:var(--ink-dim); margin-top:8px; line-height:1.5; }
+  .chart-caption strong{ color:var(--cyan); }
+
+  footer{ margin-top:26px; font-size:0.78rem; color:var(--ink-dim); line-height:1.6; border-top:1px solid var(--line-strong); padding-top:16px; }
+  footer strong{ color:var(--ink); }
+
+  ::-webkit-scrollbar{ width:6px; height:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line-strong); border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Fitting a Bernoulli mixture with <em>K</em> components</h1>
+    <p>A toy stand-in for the MNIST exercise: 10×10 binary sketches instead of 28×28 digits, so the whole EM loop is watchable. Each of the <em>K</em> tiles below is one component's pixel-probability vector μ<sub>k</sub> — watch them sharpen from noise into distinct prototypes as EM iterates.</p>
+  </header>
+
+  <div class="board">
+
+    <!-- LEFT: controls -->
+    <div class="left-col">
+      <div class="panel">
+        <div class="panel-title">CONTROLS</div>
+
+        <div class="field">
+          <label>Components (K)</label>
+          <div class="row">
+            <input type="range" id="kSlider" min="2" max="20" value="10" step="1">
+            <span class="kval" id="kVal">10</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Sample size (N)</label>
+          <div class="row">
+            <input type="range" id="nSlider" min="60" max="240" value="160" step="20">
+            <span class="kval" id="nVal">160</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Pixel noise</label>
+          <div class="row">
+            <input type="range" id="noiseSlider" min="0" max="18" value="7" step="1">
+            <span class="kval" id="noiseVal">7%</span>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button id="stepBtn">Step</button>
+          <button id="playBtn" class="primary">Run</button>
+        </div>
+        <button id="resetBtn">New random data + reset</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">STATE</div>
+        <div class="stat-line"><span>Iteration</span><span class="v" id="iterStat">0</span></div>
+        <div class="stat-line"><span>Log-likelihood</span><span class="v" id="llStat">—</span></div>
+        <div class="stat-line"><span>Δ log-lik</span><span class="v" id="dllStat">—</span></div>
+        <div class="stat-line"><span>Active components</span><span class="v" id="activeStat">—</span></div>
+      </div>
+    </div>
+
+    <!-- CENTER: prototypes -->
+    <div class="panel">
+      <div class="panel-title">PROTOTYPES — μ<sub>k</sub>, <span class="val">k = 1…K</span></div>
+      <div class="proto-grid" id="protoGrid"></div>
+    </div>
+
+    <!-- RIGHT: data + responsibilities -->
+    <div class="right-col">
+      <div class="panel">
+        <div class="panel-title">SAMPLE DATA <span class="val" id="nLabel">N = 160</span></div>
+        <div class="sample-grid" id="sampleGrid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">RESPONSIBILITIES γ(z<sub>nk</sub>)</div>
+        <div class="resp-header">
+          <canvas id="selectedCanvas" width="10" height="10"></canvas>
+          <div class="txt">Click a sample on the left.<br>Bars show which prototype the model currently blames for it.</div>
+        </div>
+        <div class="bars" id="respBars"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <div class="panel-title">LOG-LIKELIHOOD, BY ITERATION</div>
+    <div class="chart-wrap"><canvas id="llCanvas"></canvas></div>
+    <div class="chart-caption">Each E-step / M-step pair can only raise this number (or leave it flat) — that's the EM guarantee. <strong>Flattening ≈ convergence</strong>: the μ<sub>k</sub> prototypes have settled and further iterations won't reshape them much.</div>
+  </div>
+
+  <footer>
+    <strong>Reading the board:</strong> the E-step computes, for every sample, how plausible each prototype is as its source (that's γ) — those numbers feed the right-hand panel. The M-step then redraws each μ<sub>k</sub> as the γ-weighted average of every sample, pulling each prototype toward the samples that currently "trust" it most. On real MNIST at K=20 with 784 pixels, this same loop tends to settle into roughly one-to-two prototypes per digit, plus a few components that pick up unusual writing styles or go unused.
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  const GRID = 10, D = GRID*GRID;
+  const EPS = 1e-6;
+
+  // ---------- shape library (base prototypes drawn procedurally) ----------
+  function blank(){ return new Array(D).fill(0); }
+  function set(g,x,y){ if(x>=0&&x<GRID&&y>=0&&y<GRID) g[y*GRID+x]=1; }
+  function line(g,x0,y0,x1,y1){
+    x0=Math.round(x0);y0=Math.round(y0);x1=Math.round(x1);y1=Math.round(y1);
+    let dx=Math.abs(x1-x0), dy=-Math.abs(y1-y0);
+    let sx = x0<x1?1:-1, sy = y0<y1?1:-1, err = dx+dy;
+    while(true){
+      set(g,x0,y0);
+      if(x0===x1 && y0===y1) break;
+      let e2=2*err;
+      if(e2>=dy){ err+=dy; x0+=sx; }
+      if(e2<=dx){ err+=dx; y0+=sy; }
+    }
+  }
+  function thicken(g){
+    const out = g.slice();
+    for(let y=0;y<GRID;y++) for(let x=0;x<GRID;x++){
+      if(g[y*GRID+x]===1){ set(out,x+1,y); set(out,x,y+1); }
+    }
+    return out;
+  }
+  function shift(g,dx,dy){
+    const out = blank();
+    for(let y=0;y<GRID;y++) for(let x=0;x<GRID;x++){
+      if(g[y*GRID+x]===1) set(out,x+dx,y+dy);
+    }
+    return out;
+  }
+
+  function makeBaseShapes(){
+    const shapes = [];
+    // bar (like "1")
+    let g = blank(); line(g,3,1,5,1); line(g,5,1,5,8); line(g,3,8,7,8); shapes.push(g);
+    // ring (like "0")
+    g = blank(); line(g,2,1,7,1); line(g,2,8,7,8); line(g,2,1,2,8); line(g,7,1,7,8); shapes.push(g);
+    // diagonal (like "7")
+    g = blank(); line(g,1,1,8,1); line(g,8,1,3,8); shapes.push(g);
+    // cross
+    g = blank(); line(g,1,4,8,4); line(g,4,1,4,8); shapes.push(g);
+    // zigzag (like "2")
+    g = blank(); line(g,2,1,7,1); line(g,7,1,2,7); line(g,2,8,8,8); shapes.push(g);
+    // triangle-ish (like "4")
+    g = blank(); line(g,6,1,6,8); line(g,6,1,1,6); line(g,1,6,8,6); shapes.push(g);
+    return shapes;
+  }
+
+  function makeStyleVariants(baseShapes){
+    // each base shape -> 2 style variants (shifted / thickened), so real cluster count ~ 2x base
+    const styles = [];
+    baseShapes.forEach(s=>{
+      styles.push(s);
+      styles.push(thicken(shift(s, Math.random()<0.5?-1:1, 0)));
+    });
+    return styles;
+  }
+
+  function flipNoise(g, p){
+    return g.map(v => Math.random() < p ? 1-v : v);
+  }
+
+  // ---------- state ----------
+  let K = 10, N = 160, noise = 0.07;
+  let data = [];         // N x D
+  let mu = [];           // K x D
+  let pi = [];           // K
+  let gamma = [];        // N x K
+  let ll_history = [];
+  let iter = 0;
+  let playing = false;
+  let playTimer = null;
+  let selectedIdx = null;
+  let styleShapes = [];
+
+  function randInit(){
+    mu = []; pi = [];
+    for(let k=0;k<K;k++){
+      const m = new Array(D).fill(0).map(()=> 0.25 + Math.random()*0.5);
+      mu.push(m);
+      pi.push(1/K);
+    }
+    gamma = data.map(()=> new Array(K).fill(1/K));
+    ll_history = [];
+    iter = 0;
+  }
+
+  function genData(){
+    styleShapes = makeStyleVariants(makeBaseShapes());
+    data = [];
+    for(let n=0;n<N;n++){
+      const base = styleShapes[n % styleShapes.length];
+      data.push(flipNoise(base, noise));
+    }
+    // shuffle
+    for(let i=data.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [data[i],data[j]] = [data[j],data[i]];
+    }
+  }
+
+  function logBernoulli(x, m){
+    let s = 0;
+    for(let d=0; d<D; d++){
+      const md = Math.min(1-EPS, Math.max(EPS, m[d]));
+      s += x[d]*Math.log(md) + (1-x[d])*Math.log(1-md);
+    }
+    return s;
+  }
+
+  function eStep(){
+    let totalLL = 0;
+    for(let n=0;n<N;n++){
+      const logs = new Array(K);
+      let maxLog = -Infinity;
+      for(let k=0;k<K;k++){
+        logs[k] = Math.log(Math.max(pi[k],EPS)) + logBernoulli(data[n], mu[k]);
+        if(logs[k] > maxLog) maxLog = logs[k];
+      }
+      let sumExp = 0;
+      for(let k=0;k<K;k++) sumExp += Math.exp(logs[k]-maxLog);
+      const logSum = maxLog + Math.log(sumExp);
+      for(let k=0;k<K;k++) gamma[n][k] = Math.exp(logs[k]-logSum);
+      totalLL += logSum;
+    }
+    return totalLL;
+  }
+
+  function mStep(){
+    const Nk = new Array(K).fill(0);
+    for(let n=0;n<N;n++) for(let k=0;k<K;k++) Nk[k]+=gamma[n][k];
+    const newMu = [];
+    for(let k=0;k<K;k++){
+      const m = new Array(D).fill(0);
+      for(let n=0;n<N;n++){
+        const g = gamma[n][k];
+        const x = data[n];
+        for(let d=0; d<D; d++) m[d]+= g*x[d];
+      }
+      const denom = Math.max(Nk[k], EPS);
+      for(let d=0; d<D; d++) m[d] = m[d]/denom;
+      newMu.push(m);
+    }
+    mu = newMu;
+    pi = Nk.map(v => v/N);
+  }
+
+  function stepEM(){
+    const ll = eStep();
+    mStep();
+    iter++;
+    ll_history.push(ll);
+    if(ll_history.length>400) ll_history.shift();
+  }
+
+  // ---------- rendering ----------
+  function drawGridToCanvas(canvas, arr, cellColorFn){
+    const ctx = canvas.getContext('2d');
+    canvas.width = GRID; canvas.height = GRID;
+    const img = ctx.createImageData(GRID, GRID);
+    for(let i=0;i<D;i++){
+      const [r,g,b] = cellColorFn(arr[i]);
+      img.data[i*4+0]=r; img.data[i*4+1]=g; img.data[i*4+2]=b; img.data[i*4+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+  }
+
+  // binary sample -> off-navy / amber
+  function binaryColor(v){
+    return v>0.5 ? [232,163,61] : [36,66,95];
+  }
+  // continuous prob -> interpolate navy -> amber
+  function probColor(p){
+    const off=[36,66,95], on=[232,163,61];
+    return [
+      Math.round(off[0]+(on[0]-off[0])*p),
+      Math.round(off[1]+(on[1]-off[1])*p),
+      Math.round(off[2]+(on[2]-off[2])*p)
+    ];
+  }
+
+  let protoCanvases = [], protoPiLabels = [];
+  function buildProtoGrid(){
+    const grid = document.getElementById('protoGrid');
+    grid.innerHTML = '';
+    protoCanvases = []; protoPiLabels = [];
+    for(let k=0;k<K;k++){
+      const cell = document.createElement('div');
+      cell.className = 'proto-cell';
+      const cv = document.createElement('canvas');
+      const lbl = document.createElement('div');
+      lbl.className = 'pi';
+      lbl.textContent = 'π='+(1/K).toFixed(2);
+      cell.appendChild(cv); cell.appendChild(lbl);
+      grid.appendChild(cell);
+      protoCanvases.push(cv);
+      protoPiLabels.push(lbl);
+    }
+  }
+
+  function renderProtos(){
+    for(let k=0;k<K;k++){
+      drawGridToCanvas(protoCanvases[k], mu[k], probColor);
+      protoPiLabels[k].textContent = 'π='+pi[k].toFixed(2);
+      protoCanvases[k].parentElement.classList.toggle('dead', pi[k] < 0.01);
+    }
+  }
+
+  let sampleCanvases = [];
+  function buildSampleGrid(){
+    const grid = document.getElementById('sampleGrid');
+    grid.innerHTML = '';
+    sampleCanvases = [];
+    data.forEach((x,n)=>{
+      const cv = document.createElement('canvas');
+      drawGridToCanvas(cv, x, binaryColor);
+      cv.addEventListener('click', ()=> selectSample(n));
+      grid.appendChild(cv);
+      sampleCanvases.push(cv);
+    });
+    document.getElementById('nLabel').textContent = 'N = '+N;
+  }
+
+  function selectSample(n){
+    selectedIdx = n;
+    sampleCanvases.forEach((cv,i)=> cv.classList.toggle('selected', i===n));
+    renderResp();
+  }
+
+  function renderResp(){
+    const canvas = document.getElementById('selectedCanvas');
+    const bars = document.getElementById('respBars');
+    bars.innerHTML = '';
+    if(selectedIdx===null){
+      drawGridToCanvas(canvas, blank(), binaryColor);
+      return;
+    }
+    drawGridToCanvas(canvas, data[selectedIdx], binaryColor);
+    const g = gamma[selectedIdx];
+    const maxK = g.indexOf(Math.max(...g));
+    for(let k=0;k<K;k++){
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      const pct = (g[k]*100);
+      row.innerHTML = `<span class="lbl">${k+1}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${pct.toFixed(1)}%; ${k===maxK?'':'opacity:0.55;'}"></span></span>
+        <span class="pct">${pct.toFixed(1)}%</span>`;
+      bars.appendChild(row);
+    }
+  }
+
+  function renderChart(){
+    const canvas = document.getElementById('llCanvas');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight || 150;
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    if(ll_history.length < 2){
+      ctx.fillStyle = 'rgba(169,192,210,0.5)';
+      ctx.font = '12px IBM Plex Mono';
+      ctx.fillText('Run EM to see the curve rise.', 8, h/2);
+      return;
+    }
+    const min = Math.min(...ll_history), max = Math.max(...ll_history);
+    const pad = 10;
+    const scaleX = (w-2*pad) / Math.max(1,(ll_history.length-1));
+    const scaleY = (h-2*pad) / Math.max(1e-6,(max-min));
+    // gridlines
+    ctx.strokeStyle = 'rgba(234,242,248,0.1)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<=4;i++){
+      const y = pad + i*(h-2*pad)/4;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+    }
+    ctx.beginPath();
+    ll_history.forEach((v,i)=>{
+      const x = pad + i*scaleX;
+      const y = h - pad - (v-min)*scaleY;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = '#6fb7c9';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // last point
+    const lastX = pad + (ll_history.length-1)*scaleX;
+    const lastY = h - pad - (ll_history[ll_history.length-1]-min)*scaleY;
+    ctx.fillStyle = '#e8a33d';
+    ctx.beginPath(); ctx.arc(lastX,lastY,3.5,0,Math.PI*2); ctx.fill();
+  }
+
+  function renderStats(){
+    document.getElementById('iterStat').textContent = iter;
+    const last = ll_history[ll_history.length-1];
+    document.getElementById('llStat').textContent = last!==undefined ? last.toFixed(1) : '—';
+    const prev = ll_history[ll_history.length-2];
+    document.getElementById('dllStat').textContent = (last!==undefined && prev!==undefined) ? ('+'+(last-prev).toFixed(3)) : '—';
+    const active = pi.filter(p=>p>0.01).length;
+    document.getElementById('activeStat').textContent = active + ' / ' + K;
+  }
+
+  function renderAll(){
+    renderProtos();
+    renderResp();
+    renderChart();
+    renderStats();
+  }
+
+  function fullReset(){
+    K = parseInt(document.getElementById('kSlider').value,10);
+    N = parseInt(document.getElementById('nSlider').value,10);
+    noise = parseInt(document.getElementById('noiseSlider').value,10)/100;
+    selectedIdx = null;
+    genData();
+    randInit();
+    buildProtoGrid();
+    buildSampleGrid();
+    renderAll();
+  }
+
+  // ---------- wiring ----------
+  const kSlider = document.getElementById('kSlider');
+  const nSlider = document.getElementById('nSlider');
+  const noiseSlider = document.getElementById('noiseSlider');
+  kSlider.addEventListener('input', ()=> document.getElementById('kVal').textContent = kSlider.value);
+  nSlider.addEventListener('input', ()=> document.getElementById('nVal').textContent = nSlider.value);
+  noiseSlider.addEventListener('input', ()=> document.getElementById('noiseVal').textContent = noiseSlider.value+'%');
+
+  kSlider.addEventListener('change', fullReset);
+  nSlider.addEventListener('change', fullReset);
+  noiseSlider.addEventListener('change', fullReset);
+
+  document.getElementById('resetBtn').addEventListener('click', fullReset);
+
+  document.getElementById('stepBtn').addEventListener('click', ()=>{
+    stepEM();
+    renderAll();
+  });
+
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', ()=>{
+    playing = !playing;
+    playBtn.textContent = playing ? 'Pause' : 'Run';
+    playBtn.classList.toggle('primary', !playing);
+    if(playing){
+      playTimer = setInterval(()=>{
+        stepEM();
+        renderAll();
+        if(ll_history.length>3){
+          const d = ll_history[ll_history.length-1]-ll_history[ll_history.length-2];
+          if(Math.abs(d) < 0.02){
+            playing = false;
+            playBtn.textContent = 'Run';
+            playBtn.classList.add('primary');
+            clearInterval(playTimer);
+          }
+        }
+      }, 220);
+    } else {
+      clearInterval(playTimer);
+    }
+  });
+
+  window.addEventListener('resize', renderChart);
+
+  fullReset();
+})();
+</script>
+</body>
+</html>
